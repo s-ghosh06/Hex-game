@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>HEX — AI Strategy</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=DM+Mono:wght@400;500&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ════════════════════════════════
+       HEADER
+  ═════════════════════════════════ -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-mark">
+        <div class="logo-hex"></div>
+      </div>
+      <div>
+        <div class="game-name">HEX</div>
+        <div class="game-tagline">Nash's Game · AI Strategy · Minimax + α-β Pruning</div>
+      </div>
+    </div>
+    <div class="header-stats">
+      <div class="stat-chip"><span class="lbl">MOVE</span><span id="h-move">—</span></div>
+      <div class="stat-chip"><span class="lbl">NODES</span><span id="h-nodes">—</span></div>
+      <div class="stat-chip"><span class="lbl">DEPTH</span><span id="h-depth">—</span></div>
+      <div class="turn-badge turn-player" id="turn-badge">YOUR TURN</div>
+    </div>
+  </header>
+
+  <!-- ════════════════════════════════
+       GAME MODE SELECTOR
+  ═════════════════════════════════ -->
+  <div class="mode-selector">
+    <div class="mode-selector-inner">
+      <div class="mode-label">Select Mode</div>
+      <div class="mode-btns">
+        <button class="mode-btn active" id="mode-ai" onclick="setMode('ai')">
+          <span class="mode-icon">🤖</span>
+          <span class="mode-name">vs AI</span>
+          <span class="mode-desc">Play against the computer</span>
+        </button>
+        <button class="mode-btn" id="mode-2p" onclick="setMode('2p')">
+          <span class="mode-icon">👥</span>
+          <span class="mode-name">2 Players</span>
+          <span class="mode-desc">Pass &amp; play on same device</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       INSTRUCTIONS PANEL
+  ═════════════════════════════════ -->
+  <div class="instructions-wrap">
+    <button class="instr-toggle-btn" onclick="toggleInstructions()" id="instr-toggle-btn">
+      <span>📖 How to Play</span>
+      <span class="instr-arrow" id="instr-arrow">▼</span>
+    </button>
+
+    <div class="instructions-body" id="instructions-body">
+      <div class="instr-grid">
+
+        <div class="instr-card">
+          <div class="instr-icon">🎯</div>
+          <div class="instr-heading">Objective</div>
+          <div class="instr-text">
+            Be the first to form an unbroken chain of your pieces connecting your two edges of the board.
+            There are <strong>no draws</strong> in Hex — someone always wins (proven by John Nash, 1942).
+          </div>
+        </div>
+
+        <div class="instr-card">
+          <div class="instr-icon" style="color:var(--teal)">⬡</div>
+          <div class="instr-heading">Teal — Player 1</div>
+          <div class="instr-text">
+            Your goal is to connect the <strong>Left edge → Right edge</strong> of the board.
+            In vs AI mode you always play as Teal. In 2-Player mode, Teal goes first.
+          </div>
+        </div>
+
+        <div class="instr-card">
+          <div class="instr-icon" style="color:var(--gold)">⬡</div>
+          <div class="instr-heading">Gold — AI / Player 2</div>
+          <div class="instr-text">
+            Must connect the <strong>Top edge → Bottom edge</strong>.
+            In 2-Player mode, pass the phone to Player 2 on their turn.
+          </div>
+        </div>
+
+        <div class="instr-card">
+          <div class="instr-icon">👆</div>
+          <div class="instr-heading">How to Place</div>
+          <div class="instr-text">
+            Tap or click any empty hexagon to place your piece. Players alternate turns automatically.
+            Each hex touches 6 neighbours, forming the board's unique diagonal connectivity.
+          </div>
+        </div>
+
+        <div class="instr-card">
+          <div class="instr-icon">🧠</div>
+          <div class="instr-heading">Strategy</div>
+          <div class="instr-text">
+            Control the centre — it connects to the most paths. Block your opponent's chain early.
+            Every move both attacks and defends simultaneously. The <strong>Undo</strong> button removes the last 2 moves.
+          </div>
+        </div>
+
+        <div class="instr-card">
+          <div class="instr-icon">👥</div>
+          <div class="instr-heading">2-Player Mode</div>
+          <div class="instr-text">
+            Both players share one device. Player 1 is Teal (Left→Right), Player 2 is Gold (Top→Bottom).
+            The screen shows whose turn it is clearly. Pass the phone after each move!
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       TOOLBAR
+  ═════════════════════════════════ -->
+  <div class="toolbar">
+    <span class="toolbar-label">Board</span>
+    <button class="size-btn active" data-size="7"  onclick="setSize(7)">7×7</button>
+    <button class="size-btn"        data-size="9"  onclick="setSize(9)">9×9</button>
+    <button class="size-btn"        data-size="11" onclick="setSize(11)">11×11</button>
+    <div class="tb-sep" id="diff-sep"></div>
+    <div id="diff-group" class="diff-group">
+      <span class="toolbar-label">AI</span>
+      <button class="size-btn active" data-diff="easy"   onclick="setDiff('easy')">Easy</button>
+      <button class="size-btn"        data-diff="medium" onclick="setDiff('medium')">Med</button>
+      <button class="size-btn"        data-diff="hard"   onclick="setDiff('hard')">Hard</button>
+    </div>
+    <div class="tb-sep"></div>
+    <button class="tb-btn tb-primary"   onclick="newGame()">▶ New</button>
+    <button class="tb-btn tb-secondary" onclick="undoMove()">↩ Undo</button>
+  </div>
+
+  <!-- ════════════════════════════════
+       MAIN AREA
+  ═════════════════════════════════ -->
+  <div class="main">
+
+    <!-- Game Board Panel -->
+    <div class="game-panel">
+
+      <!-- Whose turn — big mobile banner -->
+      <div class="turn-banner" id="turn-banner">
+        <div class="turn-banner-dot" id="tb-dot"></div>
+        <div class="turn-banner-text" id="tb-text">Tap a hex to begin</div>
+      </div>
+
+      <div class="board-wrapper">
+        <div class="edge-label edge-top" id="top-label">⬡ Gold — Top → Bottom</div>
+        <div class="edge-sides">
+          <div class="edge-label edge-vert edge-left" id="left-label">Teal<br>←→</div>
+          <div class="board-scroll">
+            <svg id="board-svg"></svg>
+          </div>
+          <div class="edge-label edge-vert edge-right" id="right-label">Teal<br>←→</div>
+        </div>
+        <div class="edge-label edge-bottom" id="bottom-label">⬡ Gold — Top → Bottom</div>
+      </div>
+
+      <!-- Legend -->
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-dot ld-player"></div>
+          <span id="leg-p1">You (Teal) — Left → Right</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot ld-ai"></div>
+          <span id="leg-p2">AI (Gold) — Top → Bottom</span>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="status-bar">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-msg">Tap any hex to place your piece</span>
+      </div>
+
+    </div>
+
+    <!-- Side Panel -->
+    <div class="side">
+
+      <!-- AI Brain (vs AI only) -->
+      <div class="card" id="ai-brain-card">
+        <div class="card-title">AI Brain — Live</div>
+        <span class="thinking-badge" id="think-badge"><span class="spin">⟳</span> Thinking…</span>
+        <div class="think-row"><span class="think-lbl">Algorithm</span><span class="think-val">Minimax + α-β</span></div>
+        <div class="think-row"><span class="think-lbl">Search Depth</span><span class="think-val" id="t-depth">—</span></div>
+        <div class="think-row"><span class="think-lbl">Nodes Evaluated</span><span class="think-val" id="t-nodes">—</span></div>
+        <div class="think-row"><span class="think-lbl">Branches Pruned</span><span class="think-val" id="t-pruned">—</span></div>
+        <div class="think-row"><span class="think-lbl">Best Score</span><span class="think-val" id="t-score">—</span></div>
+        <div class="think-row"><span class="think-lbl">Best Move</span><span class="think-val" id="t-best">—</span></div>
+        <div class="depth-bar"><div class="depth-fill" id="depth-fill"></div></div>
+      </div>
+
+      <!-- Algorithms -->
+      <div class="card" id="algo-card">
+        <div class="card-title">Algorithms Used</div>
+
+        <div class="algo-block ai-minimax">
+          <div class="algo-header">
+            <div class="algo-icon">MM</div>
+            <div class="algo-name">Minimax Search</div>
+          </div>
+          <div class="algo-desc">AI explores all moves to a set depth, alternating maximising and minimising scores. Guarantees the best move at the given depth.</div>
+          <div class="algo-ref">Ref: Shannon (1950) — Philosophical Magazine</div>
+        </div>
+
+        <div class="algo-block ai-ab">
+          <div class="algo-header">
+            <div class="algo-icon">α-β</div>
+            <div class="algo-name">Alpha-Beta Pruning</div>
+          </div>
+          <div class="algo-desc">Skips branches that can't affect the result. Reduces O(b^d) to O(b^(d/2)) — AI searches twice as deep in same time.</div>
+          <div class="algo-ref">Ref: Knuth & Moore (1975) — AI Journal</div>
+        </div>
+
+        <div class="algo-block ai-uct">
+          <div class="algo-header">
+            <div class="algo-icon">UF</div>
+            <div class="algo-name">Union-Find (Win Check)</div>
+          </div>
+          <div class="algo-desc">Detects winning connections in O(α(n)) ≈ O(1) using Disjoint Sets. Win detected when virtual edge-nodes merge.</div>
+          <div class="algo-ref">Ref: Tarjan (1975) — Journal of the ACM</div>
+        </div>
+
+      </div>
+
+      <!-- Move History -->
+      <div class="card">
+        <div class="card-title">Move History</div>
+        <div class="move-list" id="move-list">
+          <div class="empty-msg">No moves yet.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- end .app -->
+
+<!-- WIN OVERLAY -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-icon"  id="m-icon">🏆</div>
+    <div class="modal-title" id="m-title">YOU WIN!</div>
+    <div class="modal-sub"   id="m-sub">Path connected!</div>
+    <div class="modal-stats">
+      <div class="mstat"><div class="mstat-val" id="ms-moves">0</div><div class="mstat-lbl">Total Moves</div></div>
+      <div class="mstat"><div class="mstat-val" id="ms-nodes">0</div><div class="mstat-lbl">Nodes Eval.</div></div>
+      <div class="mstat"><div class="mstat-val" id="ms-pruned">0</div><div class="mstat-lbl">Pruned</div></div>
+      <div class="mstat"><div class="mstat-val" id="ms-diff">—</div><div class="mstat-lbl">Mode</div></div>
+    </div>
+    <div class="modal-btns">
+      <button class="mbtn mbtn-primary" onclick="newGame();closeModal()">Play Again</button>
+      <button class="mbtn mbtn-outline" onclick="closeModal()">Review Board</button>
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
