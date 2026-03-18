@@ -1,8 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════
 //  HEX STRATEGY — script.js
 //
-//  Modes: vs AI  → Player (Teal) vs Minimax AI (Gold)
-//         2P     → Player 1 (Teal) vs Player 2 (Gold), no AI
+//  FIXES IN THIS VERSION:
+//    #1  How to Play text simplified (HTML only)
+//    #2  toggleSection() — single function handles both collapsibles
+//    #3  Header centered (CSS only)
+//    #4  Move/Nodes/Depth/Turn moved inside AI Brain card
+//    #5  Player side selection — player picks LR or TB before game
 //
 //  Algorithms:
 //    1. Minimax Search        — Shannon (1950), Philosophical Magazine
@@ -11,31 +15,30 @@
 //    4. Dijkstra heuristic    — Board evaluation / path cost
 // ═══════════════════════════════════════════════════════════════════
 
-// ─── CONSTANTS ──────────────────────────────────────────────────────
 const EMPTY  = 0;
-const PLAYER = 1;   // Teal  — Left → Right
-const AI     = 2;   // Gold  — Top  → Bottom
+const PIECE1 = 1;  // Left→Right connector (Teal)
+const PIECE2 = 2;  // Top→Bottom connector (Gold)
 
 const DIFF_DEPTH = { easy: 1, medium: 2, hard: 3 };
-
-// 6 neighbours on a pointy-top offset hex grid
-const HEX_DIRS = [[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0]];
+const HEX_DIRS   = [[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0]];
 
 // ─── GAME STATE ─────────────────────────────────────────────────────
 let N           = 7;
 let board       = [];
-let currentTurn = PLAYER;
+let currentTurn = PIECE1;
 let gameOver    = false;
 let diff        = 'easy';
-let gameMode    = 'ai';    // 'ai' | '2p'
+let gameMode    = 'ai';
+let playerSide  = 'LR';   // 'LR' = player is PIECE1 (teal), 'TB' = player is PIECE2 (gold)
 let moveHistory = [];
 let totalNodes  = 0;
 let totalPruned = 0;
 let lastAIMove  = null;
 
+function getPlayerPiece() { return playerSide === 'LR' ? PIECE1 : PIECE2; }
+function getAIPiece()     { return playerSide === 'LR' ? PIECE2 : PIECE1; }
+
 // ─── UNION-FIND ──────────────────────────────────────────────────────
-// O(α(n)) ≈ O(1) win detection via Disjoint Set Union.
-// Virtual nodes: [N*N] = source edge, [N*N+1] = target edge
 class UnionFind {
   constructor(n) {
     this.parent = Array.from({length:n}, (_,i) => i);
@@ -55,67 +58,69 @@ class UnionFind {
   connected(a, b) { return this.find(a) === this.find(b); }
 }
 
-let ufPlayer, ufAI;
-const P_LEFT  = () => N*N;
-const P_RIGHT = () => N*N+1;
-const A_TOP   = () => N*N;
-const A_BOT   = () => N*N+1;
+let uf1, uf2;
+const LR_LEFT  = () => N*N;
+const LR_RIGHT = () => N*N+1;
+const TB_TOP   = () => N*N;
+const TB_BOT   = () => N*N+1;
 
 function idx(r, c) { return r*N + c; }
 
-// Rebuild Union-Find from scratch (needed after undo / minimax rollback)
 function initUF() {
-  ufPlayer = new UnionFind(N*N+2);
-  ufAI     = new UnionFind(N*N+2);
+  uf1 = new UnionFind(N*N+2);
+  uf2 = new UnionFind(N*N+2);
   for (let r=0; r<N; r++)
     for (let c=0; c<N; c++) {
-      if (board[r][c] === PLAYER) mergePlayer(r, c);
-      if (board[r][c] === AI)     mergeAI(r, c);
+      if (board[r][c] === PIECE1) _merge1(r, c);
+      if (board[r][c] === PIECE2) _merge2(r, c);
     }
 }
 
-function mergePlayer(r, c) {
-  if (c === 0)     ufPlayer.union(idx(r,c), P_LEFT());
-  if (c === N-1)   ufPlayer.union(idx(r,c), P_RIGHT());
+function _merge1(r, c) {
+  if (c === 0)   uf1.union(idx(r,c), LR_LEFT());
+  if (c === N-1) uf1.union(idx(r,c), LR_RIGHT());
   for (const [nr,nc] of neighbors(r,c))
-    if (board[nr][nc] === PLAYER) ufPlayer.union(idx(r,c), idx(nr,nc));
+    if (board[nr][nc] === PIECE1) uf1.union(idx(r,c), idx(nr,nc));
 }
-
-function mergeAI(r, c) {
-  if (r === 0)     ufAI.union(idx(r,c), A_TOP());
-  if (r === N-1)   ufAI.union(idx(r,c), A_BOT());
+function _merge2(r, c) {
+  if (r === 0)   uf2.union(idx(r,c), TB_TOP());
+  if (r === N-1) uf2.union(idx(r,c), TB_BOT());
   for (const [nr,nc] of neighbors(r,c))
-    if (board[nr][nc] === AI) ufAI.union(idx(r,c), idx(nr,nc));
+    if (board[nr][nc] === PIECE2) uf2.union(idx(r,c), idx(nr,nc));
 }
 
-function checkWin(who) {
-  if (who === PLAYER) return ufPlayer.connected(P_LEFT(), P_RIGHT());
-  return ufAI.connected(A_TOP(), A_BOT());
+function merge(piece, r, c) {
+  if (piece === PIECE1) _merge1(r, c);
+  else                  _merge2(r, c);
 }
 
-// ─── HEX NEIGHBORS ──────────────────────────────────────────────────
+function checkWin(piece) {
+  if (piece === PIECE1) return uf1.connected(LR_LEFT(), LR_RIGHT());
+  return uf2.connected(TB_TOP(), TB_BOT());
+}
+
+// ─── NEIGHBORS ──────────────────────────────────────────────────────
 function neighbors(r, c) {
   return HEX_DIRS
     .map(([dr,dc]) => [r+dr, c+dc])
     .filter(([nr,nc]) => nr>=0 && nr<N && nc>=0 && nc<N);
 }
 
-// ─── BOARD EVALUATION — Dijkstra shortest path cost ─────────────────
-// Cost to cross board for each player.
-// Friendly cell = 0, empty = 1, enemy = Infinity.
-function dijkstraCost(who) {
+// ─── BOARD EVALUATION (Dijkstra) ────────────────────────────────────
+function dijkstraCost(piece) {
   const INF   = 1e9;
   const dist2 = Array.from({length:N}, () => new Array(N).fill(INF));
   const pq    = [];
+  const enemy = piece === PIECE1 ? PIECE2 : PIECE1;
 
-  if (who === PLAYER) {
+  if (piece === PIECE1) {
     for (let r=0; r<N; r++) {
-      const cost = board[r][0]===AI ? INF : board[r][0]===PLAYER ? 0 : 1;
+      const cost = board[r][0]===enemy ? INF : board[r][0]===piece ? 0 : 1;
       if (cost < INF) { dist2[r][0] = cost; pq.push([cost,r,0]); }
     }
   } else {
     for (let c=0; c<N; c++) {
-      const cost = board[0][c]===PLAYER ? INF : board[0][c]===AI ? 0 : 1;
+      const cost = board[0][c]===enemy ? INF : board[0][c]===piece ? 0 : 1;
       if (cost < INF) { dist2[0][c] = cost; pq.push([cost,0,c]); }
     }
   }
@@ -125,10 +130,9 @@ function dijkstraCost(who) {
     const [d,r,c] = pq.shift();
     if (d > dist2[r][c]) continue;
     for (const [nr,nc] of neighbors(r,c)) {
-      const enemy = who===PLAYER ? AI : PLAYER;
-      const nc2   = board[nr][nc]===enemy ? INF : board[nr][nc]===who ? 0 : 1;
+      const nc2 = board[nr][nc]===enemy ? INF : board[nr][nc]===piece ? 0 : 1;
       if (nc2 === INF) continue;
-      const nd = d + nc2;
+      const nd = d+nc2;
       if (nd < dist2[nr][nc]) {
         dist2[nr][nc] = nd;
         pq.push([nd,nr,nc]);
@@ -138,62 +142,61 @@ function dijkstraCost(who) {
   }
 
   let best = INF;
-  if (who===PLAYER) for (let r=0;r<N;r++) best = Math.min(best, dist2[r][N-1]);
-  else              for (let c=0;c<N;c++) best = Math.min(best, dist2[N-1][c]);
+  if (piece===PIECE1) for (let r=0;r<N;r++) best = Math.min(best, dist2[r][N-1]);
+  else                for (let c=0;c<N;c++) best = Math.min(best, dist2[N-1][c]);
   return best===INF ? 999 : best;
 }
 
-// Positive = AI advantage, Negative = Player advantage
+// Score: positive = PIECE2 ahead, negative = PIECE1 ahead
 function evaluate() {
-  if (checkWin(AI))     return  10000;
-  if (checkWin(PLAYER)) return -10000;
-  return dijkstraCost(PLAYER) - dijkstraCost(AI);
+  if (checkWin(PIECE2)) return  10000;
+  if (checkWin(PIECE1)) return -10000;
+  return dijkstraCost(PIECE1) - dijkstraCost(PIECE2);
 }
 
-// ─── MINIMAX + ALPHA-BETA PRUNING ───────────────────────────────────
-// Reference: Knuth & Moore (1975) — Artificial Intelligence Journal
+// ─── MINIMAX + ALPHA-BETA ────────────────────────────────────────────
 let nodesCount = 0, prunedCount = 0;
 
 function minimax(depth, isMax, alpha, beta) {
   nodesCount++;
-  if (checkWin(AI))     return  10000 + depth;
-  if (checkWin(PLAYER)) return -10000 - depth;
+  if (checkWin(PIECE2)) return  10000 + depth;
+  if (checkWin(PIECE1)) return -10000 - depth;
   if (depth === 0)      return evaluate();
 
   const empties = [];
   for (let r=0; r<N; r++)
     for (let c=0; c<N; c++)
       if (board[r][c] === EMPTY) empties.push([r,c]);
-
   if (!empties.length) return evaluate();
 
-  // Move ordering: centre cells first (better pruning)
-  const cr = Math.floor(N/2), cc = Math.floor(N/2);
+  const cr = Math.floor(N/2), cm = Math.floor(N/2);
   empties.sort((a,b) =>
-    (Math.abs(a[0]-cr)+Math.abs(a[1]-cc)) -
-    (Math.abs(b[0]-cr)+Math.abs(b[1]-cc))
+    (Math.abs(a[0]-cr)+Math.abs(a[1]-cm)) -
+    (Math.abs(b[0]-cr)+Math.abs(b[1]-cm))
   );
 
   if (isMax) {
+    // isMax = PIECE2's move
     let best = -Infinity;
     for (const [r,c] of empties) {
-      board[r][c] = AI; mergeAI(r,c);
+      board[r][c] = PIECE2; merge(PIECE2, r, c);
       const val = minimax(depth-1, false, alpha, beta);
       board[r][c] = EMPTY; initUF();
-      best  = Math.max(best, val);
-      alpha = Math.max(alpha, val);
-      if (beta <= alpha) { prunedCount++; break; }   // α-β cut
+      if (val > best) best = val;
+      if (val > alpha) alpha = val;
+      if (beta <= alpha) { prunedCount++; break; }
     }
     return best;
   } else {
+    // !isMax = PIECE1's move
     let best = Infinity;
     for (const [r,c] of empties) {
-      board[r][c] = PLAYER; mergePlayer(r,c);
+      board[r][c] = PIECE1; merge(PIECE1, r, c);
       const val = minimax(depth-1, true, alpha, beta);
       board[r][c] = EMPTY; initUF();
-      best = Math.min(best, val);
-      beta = Math.min(beta, val);
-      if (beta <= alpha) { prunedCount++; break; }   // α-β cut
+      if (val < best) best = val;
+      if (val < beta) beta = val;
+      if (beta <= alpha) { prunedCount++; break; }
     }
     return best;
   }
@@ -201,32 +204,41 @@ function minimax(depth, isMax, alpha, beta) {
 
 function getBestMove() {
   nodesCount = 0; prunedCount = 0;
-  const depth = DIFF_DEPTH[diff];
-  let bestVal = -Infinity, bestMove = null;
+  const depth   = DIFF_DEPTH[diff];
+  const aiPiece = getAIPiece();
+  // isMax = true when AI is PIECE2, false when AI is PIECE1
+  const aiIsMax = aiPiece === PIECE2;
+  let bestVal = aiIsMax ? -Infinity : Infinity;
+  let bestMove = null;
 
   const empties = [];
   for (let r=0; r<N; r++)
     for (let c=0; c<N; c++)
       if (board[r][c] === EMPTY) empties.push([r,c]);
+  if (!empties.length) return null;
 
-  const cr = Math.floor(N/2), cc = Math.floor(N/2);
+  const cr = Math.floor(N/2), cm = Math.floor(N/2);
   empties.sort((a,b) =>
-    (Math.abs(a[0]-cr)+Math.abs(a[1]-cc)) -
-    (Math.abs(b[0]-cr)+Math.abs(b[1]-cc))
+    (Math.abs(a[0]-cr)+Math.abs(a[1]-cm)) -
+    (Math.abs(b[0]-cr)+Math.abs(b[1]-cm))
   );
 
-  // Easy: random from top candidates
   if (diff === 'easy') {
     const top = empties.slice(0, Math.min(6, empties.length));
-    nodesCount = 1;
+    nodesCount = top.length;
     return top[Math.floor(Math.random()*top.length)];
   }
 
   for (const [r,c] of empties) {
-    board[r][c] = AI; mergeAI(r,c);
-    const val = minimax(depth-1, false, -Infinity, Infinity);
+    board[r][c] = aiPiece; merge(aiPiece, r, c);
+    // After AI places, next turn is opponent → flip isMax
+    const val = minimax(depth-1, !aiIsMax, -Infinity, Infinity);
     board[r][c] = EMPTY; initUF();
-    if (val > bestVal) { bestVal = val; bestMove = [r,c]; }
+
+    if (aiIsMax ? val > bestVal : val < bestVal) {
+      bestVal = val;
+      bestMove = [r,c];
+    }
   }
   return bestMove;
 }
@@ -234,10 +246,9 @@ function getBestMove() {
 // ═══════════════════════════════════════════════════════════════════
 //  GAME CONTROL
 // ═══════════════════════════════════════════════════════════════════
-
 function newGame() {
   board       = Array.from({length:N}, () => new Array(N).fill(EMPTY));
-  currentTurn = PLAYER;
+  currentTurn = PIECE1;
   gameOver    = false;
   moveHistory = [];
   totalNodes  = 0;
@@ -251,24 +262,43 @@ function newGame() {
   updateLegend();
   resetBrainPanel();
   updateTurnUI();
+
+  // If AI goes first (player chose TB = AI is PIECE1), trigger AI
+  if (gameMode === 'ai' && currentTurn === getAIPiece()) {
+    document.getElementById('think-badge').classList.add('show');
+    setTimeout(doAIMove, 600);
+  }
 }
 
-// ─── MODE SWITCH ────────────────────────────────────────────────────
+// ─── FIX #5: Side selection ──────────────────────────────────────────
+function setPlayerSide(side) {
+  playerSide = side;
+  document.getElementById('side-lr').classList.toggle('active', side === 'LR');
+  document.getElementById('side-tb').classList.toggle('active', side === 'TB');
+  updateEdgeLabels();
+  updateLegend();
+  newGame();
+}
+
+// ─── MODE ───────────────────────────────────────────────────────────
 function setMode(m) {
   gameMode = m;
   document.getElementById('mode-ai').classList.toggle('active', m==='ai');
   document.getElementById('mode-2p').classList.toggle('active', m==='2p');
 
-  // Show/hide AI difficulty buttons
-  const dg = document.getElementById('diff-group');
-  if (m === '2p') dg.classList.add('hidden');
-  else            dg.classList.remove('hidden');
+  const sideSel = document.getElementById('side-selection');
+  const dg      = document.getElementById('diff-group');
+  const brain   = document.getElementById('ai-brain-card');
 
-  // Show/hide AI brain card
-  const brain = document.getElementById('ai-brain-card');
-  const algo  = document.getElementById('algo-card');
-  if (m === '2p') { brain.classList.add('hidden'); algo.classList.add('hidden'); }
-  else            { brain.classList.remove('hidden'); algo.classList.remove('hidden'); }
+  if (m === '2p') {
+    sideSel.classList.add('hidden');
+    dg.classList.add('hidden');
+    brain.classList.add('hidden');
+  } else {
+    sideSel.classList.remove('hidden');
+    dg.classList.remove('hidden');
+    brain.classList.remove('hidden');
+  }
 
   newGame();
 }
@@ -276,12 +306,12 @@ function setMode(m) {
 // ─── PLAYER MOVE ────────────────────────────────────────────────────
 function playerMove(r, c) {
   if (gameOver) return;
-  if (gameMode === 'ai' && currentTurn !== PLAYER) return;
+  if (gameMode === 'ai' && currentTurn !== getPlayerPiece()) return;
   if (board[r][c] !== EMPTY) return;
 
   const who = currentTurn;
   board[r][c] = who;
-  who === PLAYER ? mergePlayer(r,c) : mergeAI(r,c);
+  merge(who, r, c);
   moveHistory.push({who, r, c, move: moveHistory.length+1});
 
   renderBoard();
@@ -289,31 +319,30 @@ function playerMove(r, c) {
 
   if (checkWin(who)) { endGame(who); return; }
 
-  // Switch turns
-  currentTurn = (currentTurn === PLAYER) ? AI : PLAYER;
+  currentTurn = (currentTurn === PIECE1) ? PIECE2 : PIECE1;
   updateTurnUI();
 
-  // If vs AI and it's now AI's turn — trigger AI
-  if (gameMode === 'ai' && currentTurn === AI) {
+  if (gameMode === 'ai' && currentTurn === getAIPiece()) {
     document.getElementById('think-badge').classList.add('show');
-    setTimeout(doAIMove, 130);
+    setTimeout(doAIMove, 600);
   }
 }
 
 // ─── AI MOVE ────────────────────────────────────────────────────────
 function doAIMove() {
-  if (gameOver) return;
+  if (gameOver || gameMode !== 'ai') return;
   const move = getBestMove();
   if (!move) { endGame(null); return; }
 
-  const [r,c] = move;
-  board[r][c]  = AI;
-  mergeAI(r,c);
-  lastAIMove   = {r,c};
+  const [r,c]   = move;
+  const aiPiece = getAIPiece();
+  board[r][c]   = aiPiece;
+  merge(aiPiece, r, c);
+  lastAIMove = {r, c};
 
   totalNodes  += nodesCount;
   totalPruned += prunedCount;
-  moveHistory.push({who: AI, r, c, move: moveHistory.length+1});
+  moveHistory.push({who: aiPiece, r, c, move: moveHistory.length+1});
 
   updateBrainPanel();
   document.getElementById('think-badge').classList.remove('show');
@@ -321,58 +350,49 @@ function doAIMove() {
   renderBoard();
   renderMoveHistory();
 
-  if (checkWin(AI)) { endGame(AI); return; }
+  if (checkWin(aiPiece)) { endGame(aiPiece); return; }
 
-  currentTurn = PLAYER;
+  currentTurn = getPlayerPiece();
   updateTurnUI();
 }
 
 // ─── UNDO ───────────────────────────────────────────────────────────
 function undoMove() {
   if (gameOver || moveHistory.length < 1) return;
-
-  // In vs AI: remove last 2 (AI + player). In 2P: remove last 1
-  const toRemove = gameMode === 'ai' ? 2 : 1;
+  const toRemove = (gameMode==='ai' && moveHistory.length>=2) ? 2 : 1;
   for (let i=0; i<toRemove && moveHistory.length>0; i++) {
     const m = moveHistory.pop();
     board[m.r][m.c] = EMPTY;
   }
-
   initUF();
-  currentTurn = PLAYER;
+  currentTurn = PIECE1;
   gameOver    = false;
-
+  lastAIMove  = null;
   renderBoard();
   renderMoveHistory();
   updateTurnUI();
-  setStatus('Move undone — continue playing');
+  setStatus('Move undone — your turn');
 }
 
-// ─── WIN PATH (BFS) ─────────────────────────────────────────────────
-function findWinPath(who) {
+// ─── WIN PATH ───────────────────────────────────────────────────────
+function findWinPath(piece) {
   const visited = new Set(), parent = {}, queue = [];
-
-  if (who === PLAYER) {
-    for (let r=0; r<N; r++)
-      if (board[r][0]===PLAYER) { queue.push([r,0]); visited.add(`${r},0`); }
+  if (piece === PIECE1) {
+    for (let r=0;r<N;r++) if(board[r][0]===PIECE1){queue.push([r,0]);visited.add(`${r},0`);}
   } else {
-    for (let c=0; c<N; c++)
-      if (board[0][c]===AI)    { queue.push([0,c]); visited.add(`0,${c}`); }
+    for (let c=0;c<N;c++) if(board[0][c]===PIECE2){queue.push([0,c]);visited.add(`0,${c}`);}
   }
-
   while (queue.length) {
     const [r,c] = queue.shift();
-    const done  = who===PLAYER ? c===N-1 : r===N-1;
+    const done  = piece===PIECE1 ? c===N-1 : r===N-1;
     if (done) {
-      const path = [`${r},${c}`]; let key = `${r},${c}`;
-      while (parent[key]) { key=parent[key]; path.push(key); }
+      const path=[`${r},${c}`]; let key=`${r},${c}`;
+      while(parent[key]){key=parent[key];path.push(key);}
       return new Set(path);
     }
     for (const [nr,nc] of neighbors(r,c)) {
-      const k = `${nr},${nc}`;
-      if (!visited.has(k) && board[nr][nc]===who) {
-        visited.add(k); parent[k]=`${r},${c}`; queue.push([nr,nc]);
-      }
+      const k=`${nr},${nc}`;
+      if (!visited.has(k)&&board[nr][nc]===piece){visited.add(k);parent[k]=`${r},${c}`;queue.push([nr,nc]);}
     }
   }
   return new Set();
@@ -383,90 +403,81 @@ function endGame(winner) {
   gameOver = true;
   const winPath = winner ? findWinPath(winner) : new Set();
   renderBoard(winPath);
+  if (!winner) { setStatus('Draw — board full'); return; }
 
-  if (!winner) { setStatus('Draw — board is full'); return; }
+  const is2P      = gameMode === '2p';
+  const playerWon = winner === getPlayerPiece();
 
-  const isPlayer = winner === PLAYER;
-  const is2P     = gameMode === '2p';
-
-  document.getElementById('m-icon').textContent  = isPlayer ? '🏆' : (is2P ? '🏆' : '🤖');
-  document.getElementById('m-title').textContent =
-    is2P ? (isPlayer ? 'Player 1 Wins!' : 'Player 2 Wins!') :
-           (isPlayer ? 'You Win!'       : 'AI Wins!');
-  document.getElementById('m-sub').textContent =
-    isPlayer
-      ? 'Teal connected Left → Right. Brilliant move!'
-      : (is2P ? 'Gold connected Top → Bottom. Well played!' : 'The AI connected Top → Bottom. Try again!');
+  document.getElementById('m-icon').textContent  = playerWon ? '🏆' : (is2P ? '🏆' : '🤖');
+  document.getElementById('m-title').textContent = is2P
+    ? (winner===PIECE1 ? 'Player 1 Wins!' : 'Player 2 Wins!')
+    : (playerWon ? 'You Win!' : 'AI Wins!');
+  document.getElementById('m-sub').textContent = playerWon
+    ? 'Your chain connected both edges. Brilliant!'
+    : (is2P ? 'Chain connected. Well played!' : 'The AI found the winning path. Try again!');
 
   document.getElementById('ms-moves').textContent  = moveHistory.length;
   document.getElementById('ms-nodes').textContent  = is2P ? 'N/A' : totalNodes.toLocaleString();
   document.getElementById('ms-pruned').textContent = is2P ? 'N/A' : totalPruned.toLocaleString();
   document.getElementById('ms-diff').textContent   = is2P ? '2P'  : diff.toUpperCase();
-
-  document.getElementById('ms-moves').style.color  = isPlayer ? 'var(--teal)' : 'var(--gold)';
+  document.getElementById('ms-moves').style.color  = playerWon ? 'var(--teal)' : 'var(--gold)';
 
   setTimeout(() => document.getElementById('overlay').classList.add('show'), 700);
 }
-
-function closeModal() {
-  document.getElementById('overlay').classList.remove('show');
-}
+function closeModal() { document.getElementById('overlay').classList.remove('show'); }
 
 // ═══════════════════════════════════════════════════════════════════
 //  SVG BOARD RENDER
 // ═══════════════════════════════════════════════════════════════════
 function renderBoard(winPath = new Set()) {
   const svg  = document.getElementById('board-svg');
-  const R    = 24;
+  const R    = 22;
   const H    = R * Math.sqrt(3);
-  const padX = 28, padY = 28;
+  const padX = 20, padY = 20;
 
-  const svgW = padX*2 + N*(R*1.5) + R + 8;
-  const svgH = padY*2 + N*H + H*0.5 + 8;
+  const svgW = Math.ceil(padX*2 + (N-1)*R*1.5 + (N-1)*R*0.75 + R*2 + R);
+  const svgH = Math.ceil(padY*2 + (N-1)*H     + (N-1)*H*0.5  + H);
 
-  svg.setAttribute('width',  Math.round(svgW));
-  svg.setAttribute('height', Math.round(svgH));
+  svg.setAttribute('width',  svgW);
+  svg.setAttribute('height', svgH);
   svg.innerHTML = '';
 
-  // Drop shadow filter
   const defs   = document.createElementNS('http://www.w3.org/2000/svg','defs');
   const filter = document.createElementNS('http://www.w3.org/2000/svg','filter');
   filter.setAttribute('id','cs');
-  filter.innerHTML = '<feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="rgba(27,43,75,0.15)"/>';
+  filter.innerHTML = '<feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="rgba(27,43,75,0.18)"/>';
   defs.appendChild(filter);
   svg.appendChild(defs);
 
+  const pp = getPlayerPiece();
+  const ap = getAIPiece();
+
   for (let r=0; r<N; r++) {
     for (let c=0; c<N; c++) {
-      // Parallelogram offset: col shifts right, row shifts down-right
       const hcx = padX + c*(R*1.5) + r*(R*0.75) + R;
-      const hcy = padY + r*H + c*(H*0.5) + H/2;
+      const hcy = padY + r*H       + c*(H*0.5)  + H/2;
 
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-
       let cls = 'hex-cell';
-      if (board[r][c]===PLAYER) cls += ' player taken';
-      else if (board[r][c]===AI) cls += ' ai taken';
+      if      (board[r][c] === pp) cls += ' player taken';
+      else if (board[r][c] === ap) cls += ' ai taken';
       if (lastAIMove && lastAIMove.r===r && lastAIMove.c===c) cls += ' last-move';
       if (winPath.has(`${r},${c}`)) cls += ' win-path';
       g.setAttribute('class', cls);
 
       const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
       poly.setAttribute('class','hex-bg');
-      poly.setAttribute('points', hexPoints(hcx, hcy, R-2));
+      poly.setAttribute('points', hexPoints(hcx, hcy, R-1.5));
       poly.setAttribute('filter','url(#cs)');
       g.appendChild(poly);
 
       if (board[r][c]===EMPTY && !gameOver) {
-        g.addEventListener('click', () => playerMove(r, c));
-        // Touch support
+        g.addEventListener('click',    () => playerMove(r, c));
         g.addEventListener('touchend', (e) => { e.preventDefault(); playerMove(r,c); });
         g.addEventListener('mouseenter', () => {
-          if (currentTurn===PLAYER || gameMode==='2p')
-            setStatus(`Hex (${r},${c}) — tap to place`);
+          if (currentTurn===pp || gameMode==='2p') setStatus(`Hex (${r},${c}) — tap to place`);
         });
       }
-
       svg.appendChild(g);
     }
   }
@@ -475,116 +486,125 @@ function renderBoard(winPath = new Set()) {
 function hexPoints(cx, cy, r) {
   return Array.from({length:6}, (_,i) => {
     const a = Math.PI/180*(60*i);
-    return `${cx + r*Math.cos(a)},${cy + r*Math.sin(a)}`;
+    return `${(cx+r*Math.cos(a)).toFixed(2)},${(cy+r*Math.sin(a)).toFixed(2)}`;
   }).join(' ');
 }
 
 // ─── MOVE HISTORY ───────────────────────────────────────────────────
 function renderMoveHistory() {
-  const el = document.getElementById('move-list');
-  if (!moveHistory.length) {
-    el.innerHTML = '<div class="empty-msg">No moves yet.</div>';
-    return;
-  }
-  const p1Label = gameMode==='2p' ? 'P1' : 'You';
-  const p2Label = gameMode==='2p' ? 'P2' : 'AI';
-  el.innerHTML = moveHistory.slice().reverse().map(m => `
-    <div class="move-entry">
+  const el   = document.getElementById('move-list');
+  const pp   = getPlayerPiece();
+  const is2P = gameMode === '2p';
+  if (!moveHistory.length) { el.innerHTML='<div class="empty-msg">No moves yet.</div>'; return; }
+  el.innerHTML = moveHistory.slice().reverse().map(m => {
+    const label = is2P
+      ? (m.who===PIECE1 ? 'P1' : 'P2')
+      : (m.who===pp ? 'You' : 'AI');
+    const color = m.who===PIECE1 ? 'var(--teal)' : 'var(--gold)';
+    return `<div class="move-entry">
       <span class="move-num">${m.move}</span>
-      <span class="move-who" style="background:${m.who===PLAYER?'var(--teal)':'var(--gold)'}"></span>
-      <span class="move-coord" style="color:${m.who===PLAYER?'var(--teal)':'var(--gold)'}">(${m.r},${m.c})</span>
-      <span class="move-type">${m.who===PLAYER ? p1Label : p2Label}</span>
-    </div>`).join('');
+      <span class="move-who" style="background:${color}"></span>
+      <span class="move-coord" style="color:${color}">(${m.r},${m.c})</span>
+      <span class="move-type">${label}</span>
+    </div>`;
+  }).join('');
 }
 
 // ─── TURN UI ────────────────────────────────────────────────────────
 function updateTurnUI() {
   const is2P     = gameMode === '2p';
-  const isTeal   = currentTurn === PLAYER;
+  const pp       = getPlayerPiece();
+  const isMyTurn = currentTurn === pp;
+  const isTeal   = currentTurn === PIECE1;
 
-  // Header badge
-  const badge = document.getElementById('turn-badge');
-  if (isTeal) {
-    badge.textContent = is2P ? 'Player 1 Turn' : 'Your Turn';
-    badge.className   = 'turn-badge turn-player';
-  } else {
-    badge.textContent = is2P ? 'Player 2 Turn' : 'AI Thinking';
-    badge.className   = 'turn-badge turn-ai';
-  }
-
-  // Turn banner (big, mobile-friendly)
   const banner = document.getElementById('turn-banner');
-  const dot    = document.getElementById('turn-banner-dot');
-  const text   = document.getElementById('turn-banner-text');
+  const bannerT= document.getElementById('turn-banner-text');
+  banner.className   = 'turn-banner ' + (isTeal ? 'teal-turn' : 'gold-turn');
+  bannerT.textContent = is2P
+    ? (isTeal ? '🟦 Player 1 — Tap your hex' : '🟨 Player 2 — Tap your hex')
+    : (isMyTurn ? '🟦 Your Turn — Tap a hex'  : '🟨 AI is thinking…');
 
-  if (isTeal) {
-    banner.className    = 'turn-banner teal-turn';
-    text.textContent    = is2P ? '🟦 Player 1 — Tap your hex' : '🟦 Your Turn — Tap a hex';
-  } else {
-    banner.className    = 'turn-banner gold-turn';
-    text.textContent    = is2P ? '🟨 Player 2 — Tap your hex' : '🟨 AI is thinking…';
+  // Turn inside brain card (Fix #4)
+  const dot  = document.getElementById('turn-inline-dot');
+  const text = document.getElementById('turn-inline-text');
+  if (dot && text) {
+    dot.className   = 'turn-inline-dot ' + (isTeal ? 'teal' : 'gold');
+    text.textContent = is2P
+      ? (isTeal ? 'Player 1 Turn' : 'Player 2 Turn')
+      : (isMyTurn ? 'Your Turn'    : 'AI Thinking…');
   }
 
-  // Status dot
-  document.getElementById('status-dot').className =
-    isTeal ? 'status-dot' : 'status-dot ai-dot';
-
-  setStatus(isTeal
-    ? (is2P ? 'Player 1 (Teal) — connect Left → Right' : 'Tap any hex to place your piece')
-    : (is2P ? 'Player 2 (Gold) — connect Top → Bottom'  : 'AI is thinking…')
+  document.getElementById('status-dot').className = isTeal ? 'status-dot' : 'status-dot ai-dot';
+  setStatus(isMyTurn || is2P
+    ? 'Tap any empty hex to place your piece'
+    : 'AI is calculating the best move…'
   );
 }
 
-// ─── EDGE LABELS ────────────────────────────────────────────────────
+// ─── EDGE LABELS & LEGEND ───────────────────────────────────────────
 function updateEdgeLabels() {
+  const pp   = getPlayerPiece();
   const is2P = gameMode === '2p';
-  document.getElementById('top-label').textContent    = is2P ? '⬡ Player 2 — Gold (Top → Bottom)' : '⬡ AI — Gold (Top → Bottom)';
-  document.getElementById('bottom-label').textContent = is2P ? '⬡ Player 2 — Gold (Top → Bottom)' : '⬡ AI — Gold (Top → Bottom)';
-  document.getElementById('left-label').innerHTML     = is2P ? 'P1<br>Teal<br>←→' : 'You<br>←→';
-  document.getElementById('right-label').innerHTML    = is2P ? 'P1<br>Teal<br>←→' : 'You<br>←→';
+  const p1n  = pp===PIECE1 ? (is2P?'Player 1':'You') : (is2P?'Player 2':'AI');
+  const p2n  = pp===PIECE2 ? (is2P?'Player 1':'You') : (is2P?'Player 2':'AI');
+  document.getElementById('top-label').textContent    = `⬡ ${p2n} (Gold) — Top → Bottom`;
+  document.getElementById('bottom-label').textContent = `⬡ ${p2n} (Gold) — Top → Bottom`;
+  document.getElementById('left-label').innerHTML     = `${p1n}<br>←→`;
+  document.getElementById('right-label').innerHTML    = `${p1n}<br>←→`;
 }
 
 function updateLegend() {
+  const pp   = getPlayerPiece();
   const is2P = gameMode === '2p';
-  document.getElementById('leg-p1').textContent = is2P ? 'Player 1 (Teal) — Left → Right' : 'You (Teal) — Left → Right';
-  document.getElementById('leg-p2').textContent = is2P ? 'Player 2 (Gold) — Top → Bottom'  : 'AI (Gold) — Top → Bottom';
+  const p1l  = pp===PIECE1 ? (is2P?'Player 1':'You (Teal)') : (is2P?'Player 2':'AI (Teal)');
+  const p2l  = pp===PIECE2 ? (is2P?'Player 1':'You (Gold)') : (is2P?'Player 2':'AI (Gold)');
+  document.getElementById('leg-p1').textContent = `${p1l} — Left → Right`;
+  document.getElementById('leg-p2').textContent = `${p2l} — Top → Bottom`;
 }
 
-// ─── BRAIN PANEL ────────────────────────────────────────────────────
+// ─── FIX #2: Unified collapsible toggle ─────────────────────────────
+function toggleSection(bodyId, arrowId) {
+  const body  = document.getElementById(bodyId);
+  const arrow = document.getElementById(arrowId);
+  if (!body || !arrow) return;
+  const open = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+}
+
+// ─── FIX #4: Brain panel ────────────────────────────────────────────
 function updateBrainPanel() {
-  document.getElementById('t-depth').textContent   = DIFF_DEPTH[diff];
-  document.getElementById('t-nodes').textContent   = nodesCount.toLocaleString();
-  document.getElementById('t-pruned').textContent  = prunedCount.toLocaleString();
-  document.getElementById('t-score').textContent   = evaluate();
-  document.getElementById('t-best').textContent    = lastAIMove ? `(${lastAIMove.r},${lastAIMove.c})` : '—';
-  document.getElementById('h-nodes').textContent   = totalNodes.toLocaleString();
-  document.getElementById('h-depth').textContent   = DIFF_DEPTH[diff];
-  document.getElementById('h-move').textContent    = moveHistory.length;
-  document.getElementById('depth-fill').style.width = (DIFF_DEPTH[diff]/3*100)+'%';
+  const s   = evaluate();
+  const stx = s > 0 ? `+${s} (AI ahead)` : s < 0 ? `${s} (You ahead)` : '0 (Even)';
+
+  document.getElementById('t-depth').textContent  = DIFF_DEPTH[diff];
+  document.getElementById('t-nodes').textContent  = nodesCount.toLocaleString();
+  document.getElementById('t-pruned').textContent = prunedCount.toLocaleString();
+  document.getElementById('t-score').textContent  = stx;
+  document.getElementById('t-best').textContent   = lastAIMove ? `Row ${lastAIMove.r}, Col ${lastAIMove.c}` : '—';
+
+  const hm = document.getElementById('h-move');
+  const hn = document.getElementById('h-nodes');
+  const hd = document.getElementById('h-depth');
+  if (hm) hm.textContent = moveHistory.length;
+  if (hn) hn.textContent = totalNodes.toLocaleString();
+  if (hd) hd.textContent = DIFF_DEPTH[diff];
+
+  document.getElementById('depth-fill').style.width = (DIFF_DEPTH[diff]/3*100) + '%';
 }
 
 function resetBrainPanel() {
   ['t-nodes','t-pruned','t-depth','t-score','t-best','h-move','h-nodes','h-depth']
-    .forEach(id => document.getElementById(id).textContent = '—');
+    .forEach(id => { const el=document.getElementById(id); if(el) el.textContent='—'; });
   document.getElementById('depth-fill').style.width = '0%';
   document.getElementById('think-badge').classList.remove('show');
-}
-
-// ─── INSTRUCTIONS TOGGLE ────────────────────────────────────────────
-function toggleInstructions() {
-  const body  = document.getElementById('instructions-body');
-  const arrow = document.getElementById('instr-arrow');
-  const btn   = document.getElementById('instr-toggle-btn');
-  const open  = body.classList.toggle('open');
-  arrow.classList.toggle('open', open);
-  btn.querySelector('span:first-child').textContent =
-    open ? '📖 How to Play' : '📖 How to Play — tap to expand';
+  const dot  = document.getElementById('turn-inline-dot');
+  const text = document.getElementById('turn-inline-text');
+  if (dot)  dot.className   = 'turn-inline-dot';
+  if (text) text.textContent = '—';
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────
-function setStatus(msg) {
-  document.getElementById('status-msg').textContent = msg;
-}
+function setStatus(msg) { const el=document.getElementById('status-msg'); if(el) el.textContent=msg; }
 
 function setSize(n) {
   N = n;
@@ -599,7 +619,8 @@ function setDiff(d) {
   document.querySelectorAll('.size-btn[data-diff]').forEach(b =>
     b.classList.toggle('active', b.dataset.diff===d)
   );
-  document.getElementById('t-depth').textContent = DIFF_DEPTH[d];
+  const el = document.getElementById('t-depth');
+  if (el) el.textContent = DIFF_DEPTH[d];
 }
 
 // ─── BOOT ───────────────────────────────────────────────────────────
