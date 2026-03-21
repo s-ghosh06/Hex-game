@@ -35,10 +35,12 @@ The game is fully playable in any browser — desktop or mobile — with no inst
 
 ## 🌐 Live Demo
 
+> Deployed on Vercel — open on any device, no installation required.
 
 ```
 https://hex-nash-game.vercel.app/
 ```
+
 
 
 ---
@@ -181,19 +183,19 @@ Contains the full HTML structure including:
 
 ## 🌍 How to Deploy
 
-### Netlify Drop (fastest — no account needed)
+### Vercel (recommended — free & fast)
 
-1. Go to [app.netlify.com/drop](https://app.netlify.com/drop)
-2. Drag your entire `hex-game` folder onto the page
-3. Netlify gives you a live public link instantly (e.g. `https://random-name.netlify.app`)
+1. Go to [vercel.com](https://vercel.com) and create a free account
+2. Click **Add New Project** → **Browse** → select your `hex-game` folder
+3. Vercel deploys instantly and gives you a live link (e.g. `https://hex-nash-game.vercel.app`)
 4. Share the link — anyone can play it on mobile or desktop, no install needed
 
-### Custom URL (free Netlify account)
+### Custom Domain
 
-1. Create a free account at [netlify.com](https://netlify.com)
-2. Deploy via drag-and-drop as above
-3. Go to **Site Settings → Change site name**
-4. Set a custom name like `hexnashgame.netlify.app`
+
+1. After deploying, go to **Project Settings → Domains**
+2. Click **Edit** next to your default domain
+3. Set a custom name like `hexnashgame.vercel.app`
 
 ---
 
@@ -214,7 +216,7 @@ Contains the full HTML structure including:
 - **Project Type:** Academic Web Project — Artificial Intelligence
 - **Concepts Demonstrated:** Game Tree Search, Heuristic Evaluation, Graph Algorithms
 - **Tech Stack:** HTML5, CSS3, Vanilla JavaScript, SVG
-- **Deployment:** Netlify (static frontend, no backend required)
+- **Deployment:** Vercel (static frontend, no backend required)
 
 ---
 
