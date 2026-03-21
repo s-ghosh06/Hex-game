@@ -35,7 +35,6 @@ The game is fully playable in any browser — desktop or mobile — with no inst
 
 ## 🌐 Live Demo
 
-> Deploy to Netlify and paste your link here:
 
 ```
 https://hex-nash-game.vercel.app/
