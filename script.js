@@ -432,11 +432,12 @@ function closeModal() { document.getElementById('overlay').classList.remove('sho
 function renderBoard(winPath = new Set()) {
   const svg  = document.getElementById('board-svg');
   const R    = 22;
-  const H    = R * Math.sqrt(3);
+  const W    = R * Math.sqrt(3);
+  const H    = R * 2;
   const padX = 20, padY = 20;
 
-  const svgW = Math.ceil(padX*2 + (N-1)*R*1.5 + (N-1)*R*0.75 + R*2 + R);
-  const svgH = Math.ceil(padY*2 + (N-1)*H     + (N-1)*H*0.5  + H);
+  const svgW = Math.ceil(padX*2 + (N-1)*W + (N-1)*(W/2) + W);
+  const svgH = Math.ceil(padY*2 + (N-1)*(R*1.5) + H);
 
   svg.setAttribute('width',  svgW);
   svg.setAttribute('height', svgH);
@@ -454,8 +455,8 @@ function renderBoard(winPath = new Set()) {
 
   for (let r=0; r<N; r++) {
     for (let c=0; c<N; c++) {
-      const hcx = padX + c*(R*1.5) + r*(R*0.75) + R;
-      const hcy = padY + r*H       + c*(H*0.5)  + H/2;
+      const hcx = padX + c * W + r * (W/2) + W/2;
+      const hcy = padY + r * (R*1.5) + H/2;
 
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
       let cls = 'hex-cell';
@@ -485,7 +486,7 @@ function renderBoard(winPath = new Set()) {
 
 function hexPoints(cx, cy, r) {
   return Array.from({length:6}, (_,i) => {
-    const a = Math.PI/180*(60*i);
+    const a = Math.PI/180*(60*i - 30);
     return `${(cx+r*Math.cos(a)).toFixed(2)},${(cy+r*Math.sin(a)).toFixed(2)}`;
   }).join(' ');
 }
@@ -549,8 +550,8 @@ function updateEdgeLabels() {
   const p2n  = pp===PIECE2 ? (is2P?'Player 1':'You') : (is2P?'Player 2':'AI');
   document.getElementById('top-label').textContent    = `⬡ ${p2n} (Gold) — Top → Bottom`;
   document.getElementById('bottom-label').textContent = `⬡ ${p2n} (Gold) — Top → Bottom`;
-  document.getElementById('left-label').innerHTML     = `${p1n}<br>←→`;
-  document.getElementById('right-label').innerHTML    = `${p1n}<br>←→`;
+  document.getElementById('left-label').textContent     = `⬡ ${p1n} (Teal) — Left → Right`;
+  document.getElementById('right-label').textContent    = `⬡ ${p1n} (Teal) — Left → Right`;
 }
 
 function updateLegend() {

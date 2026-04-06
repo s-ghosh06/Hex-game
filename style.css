@@ -392,7 +392,11 @@ body {
   background: rgba(26,181,160,0.10); color: var(--teal); border: 1px solid rgba(26,181,160,0.28);
 }
 .edge-vert {
-  writing-mode: vertical-lr; padding: 12px 4px; font-size: 0.58rem; line-height: 1.4;
+  writing-mode: vertical-lr; padding: 12px 6px; font-size: 0.6rem; line-height: 1.4;
+  display: flex; align-items: center; justify-content: center;
+}
+.edge-left {
+  transform: rotate(180deg);
 }
 .edge-sides { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; }
 
@@ -400,7 +404,7 @@ body {
   overflow: auto; max-width: 100%; border-radius: 10px;
   -webkit-overflow-scrolling: touch;
 }
-#board-svg { display: block; touch-action: auto; }
+#board-svg { display: block; touch-action: auto; margin: 0 auto; }
 
 .hex-cell { cursor: pointer; }
 .hex-cell .hex-bg {
@@ -623,7 +627,6 @@ body {
   .toolbar { padding: 10px 12px; gap: 6px; }
   .tb-sep  { display: none; }
   .turn-banner-text { font-size: 0.92rem; }
-  .edge-vert { display: none; }
   .side { flex-direction: column; }
   .side .card { flex: none; width: 100%; }
   .modal { padding: 24px 16px; }
