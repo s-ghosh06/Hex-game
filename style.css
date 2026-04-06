@@ -212,6 +212,23 @@ body {
   font-size: 0.76rem; color: var(--muted); display: block; margin-top: 1px;
 }
 
+/* Horizontal algorithm select layout */
+.layout-horizontal { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 8px; }
+.layout-horizontal .side-btn { flex: 1; min-width: 0; padding: 10px; }
+.layout-horizontal .side-name, .layout-horizontal .side-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; }
+.layout-horizontal .side-desc { font-size: 0.65rem; }
+.layout-horizontal .side-arrow { font-size: 1.1rem; width: 24px; }
+
+/* Color overrides for selections */
+.algo-btn { cursor: pointer; text-align: left; transition: all 0.2s; outline: none; border: 1.5px solid var(--border2); }
+.algo-btn:hover { background: #fff; transform: translateY(-1px); box-shadow: var(--shadow); }
+
+.algo-btn.active { border-width: 1.5px; } /* Ensures border size does not shift */
+.algo-btn-blue.active { border-color: rgba(59,111,232,0.4); background: rgba(59,111,232,0.06); box-shadow: 0 4px 14px rgba(59,111,232,0.15); }
+.algo-btn-gold.active { border-color: rgba(200,137,26,0.4); background: rgba(200,137,26,0.06); box-shadow: 0 4px 14px rgba(200,137,26,0.15); }
+.algo-btn-mix.active  { border-color: rgba(27,43,75,0.4); background: rgba(27,43,75,0.06); box-shadow: 0 4px 14px rgba(27,43,75,0.15); }
+.algo-btn-red.active  { border-color: rgba(232,64,64,0.4); background: rgba(232,64,64,0.06); box-shadow: 0 4px 14px rgba(232,64,64,0.15); }
+
 /* ════════════════════════════════════════════════════
    COLLAPSIBLE SECTIONS — Fix #1 & #2
    toggleSection() in JS handles both open/close
@@ -277,6 +294,16 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px; padding: 16px;
 }
+
+/* Force 4-column side-by-side grid specifically for the Select AI Algorithm menu */
+#algo-selection .algo-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  gap: 12px;
+}
+#algo-selection .algo-block {
+  min-width: 0;
+}
 .algo-block {
   border-radius: 12px; padding: 14px;
   border: 1.5px solid var(--border2); background: var(--surface2);
@@ -291,11 +318,30 @@ body {
 }
 .ai-minimax .algo-icon { background: rgba(59,111,232,0.14); color: var(--blue); }
 .ai-ab      .algo-icon { background: rgba(200,137,26,0.14); color: var(--gold); }
+.ai-mix     .algo-icon { background: rgba(27,43,75,0.14); color: var(--navy); }
 .ai-uct     .algo-icon { background: rgba(26,181,160,0.14); color: var(--teal); }
 .ai-dijk    .algo-icon { background: rgba(232,64,64,0.12);  color: var(--red);  }
 .algo-name { font-family: var(--font-title); font-size: 0.82rem; font-weight: 700; color: var(--text); }
 .algo-ref  { font-family: var(--font-mono); font-size: 0.6rem; color: var(--blue); margin-top: 2px; opacity: 0.8; }
 .algo-desc { font-family: var(--font-body); font-size: 0.85rem; color: var(--muted); line-height: 1.55; }
+
+/* Review Layout enhancements */
+.review-content-wrap { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.review-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+
+/* Algorithm Comparison Table Tools */
+.comp-panel { background: var(--surface2); border-radius: 12px; padding: 16px; margin: 16px; border: 1px solid var(--border2); }
+.comp-settings { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; font-family: var(--font-title); font-size: 0.75rem; text-transform: uppercase; color: var(--navy); font-weight: 600; }
+.comp-select { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border2); background: #fff; font-family: var(--font-body); outline: none; }
+.comp-table-wrap { overflow-x: auto; background: #fff; border-radius: 10px; border: 1px solid var(--border2); }
+.comp-table { width: 100%; border-collapse: collapse; text-align: right; font-family: var(--font-mono); font-size: 0.82rem; }
+.comp-table th, .comp-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.comp-table th { background: var(--surface2); font-family: var(--font-title); font-size: 0.75rem; text-transform: uppercase; color: var(--navy); font-weight: 700; }
+.comp-table tr:last-child td { border-bottom: none; }
+.comp-table th:first-child, .comp-table td:first-child { text-align: left; font-family: var(--font-body); font-weight: 600; color: var(--navy); }
+.comp-table td.highlight { background: rgba(26,181,160,0.08); color: var(--teal); font-weight: bold; }
+.comp-summary { margin-top: 12px; font-family: var(--font-body); font-size: 0.9rem; color: var(--mid); text-align: center; }
+.col-mm { color: var(--blue)!important; } .col-ab { color: var(--gold)!important; } .col-mix { color: var(--navy)!important; } .col-dj { color: var(--red)!important; }
 
 /* ════════════════════════════════════════════════════
    TOOLBAR
@@ -430,7 +476,17 @@ body {
   from { filter: drop-shadow(0 0 5px  rgba(255,255,255,0.5)); }
   to   { filter: drop-shadow(0 0 18px rgba(255,255,255,0.95)); }
 }
+.hex-cell.hint-hex .hex-bg {
+  stroke: var(--teal); stroke-width: 2.5; stroke-dasharray: 4;
+  animation: hintPulse 1s ease-in-out infinite alternate;
+}
+@keyframes hintPulse {
+  from { fill: var(--surface2); filter: drop-shadow(0 0 2px rgba(26,181,160,0.3)); }
+  to   { fill: #e6f9f6; filter: drop-shadow(0 0 10px rgba(26,181,160,0.7)); }
+}
 .hex-cell.last-move .hex-bg { stroke: #fff; stroke-width: 2.5; }
+
+.hex-coord { font-family: var(--font-mono); font-size: 0.4rem; fill: var(--muted); opacity: 0.6; text-anchor: middle; pointer-events: none; }
 
 .legend { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
 .legend-item {
@@ -631,6 +687,7 @@ body {
   .side .card { flex: none; width: 100%; }
   .modal { padding: 24px 16px; }
   .modal-title { font-size: 1.4rem; }
+  .layout-horizontal { flex-direction: column; }
 }
 @media (max-width: 380px) {
   .game-name { font-size: 1.1rem; }

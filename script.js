@@ -30,13 +30,30 @@ let gameOver    = false;
 let diff        = 'easy';
 let gameMode    = 'ai';
 let playerSide  = 'LR';   // 'LR' = player is PIECE1 (teal), 'TB' = player is PIECE2 (gold)
+let aiAlgo      = 'alphabeta'; // minimax, alphabeta, dijkstra
 let moveHistory = [];
 let totalNodes  = 0;
 let totalPruned = 0;
 let lastAIMove  = null;
+let lastAITime  = 0;
+let hintHex     = null;
 
 function getPlayerPiece() { return playerSide === 'LR' ? PIECE1 : PIECE2; }
 function getAIPiece()     { return playerSide === 'LR' ? PIECE2 : PIECE1; }
+
+function setAlgorithm(algo) {
+  aiAlgo = algo;
+  const els = ['algo-mm','algo-ab-only','algo-ab','algo-dj'];
+  els.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('active'); });
+  if (algo==='minimax')   document.getElementById('algo-mm').classList.add('active');
+  if (algo==='abonly')    document.getElementById('algo-ab-only').classList.add('active');
+  if (algo==='alphabeta') document.getElementById('algo-ab').classList.add('active');
+  if (algo==='dijkstra')  document.getElementById('algo-dj').classList.add('active');
+  
+  const map = { minimax: 'Minimax ONLY', abonly: 'Alpha-Beta (Unsorted)', alphabeta: 'Minimax + α-β', dijkstra: 'Dijkstra Heur' };
+  const el = document.getElementById('t-algo');
+  if (el) el.textContent = map[algo];
+}
 
 // ─── UNION-FIND ──────────────────────────────────────────────────────
 class UnionFind {
@@ -169,34 +186,36 @@ function minimax(depth, isMax, alpha, beta) {
       if (board[r][c] === EMPTY) empties.push([r,c]);
   if (!empties.length) return evaluate();
 
-  const cr = Math.floor(N/2), cm = Math.floor(N/2);
-  empties.sort((a,b) =>
-    (Math.abs(a[0]-cr)+Math.abs(a[1]-cm)) -
-    (Math.abs(b[0]-cr)+Math.abs(b[1]-cm))
-  );
+  let useEmpties = empties;
+  if (aiAlgo !== 'abonly') {
+    const cr = Math.floor(N/2), cm = Math.floor(N/2);
+    useEmpties.sort((a,b) =>
+      (Math.abs(a[0]-cr)+Math.abs(a[1]-cm)) -
+      (Math.abs(b[0]-cr)+Math.abs(b[1]-cm))
+    );
+  }
 
   if (isMax) {
-    // isMax = PIECE2's move
     let best = -Infinity;
-    for (const [r,c] of empties) {
+    for (const [r,c] of useEmpties) {
       board[r][c] = PIECE2; merge(PIECE2, r, c);
       const val = minimax(depth-1, false, alpha, beta);
       board[r][c] = EMPTY; initUF();
       if (val > best) best = val;
       if (val > alpha) alpha = val;
-      if (beta <= alpha) { prunedCount++; break; }
+      if ((aiAlgo === 'alphabeta' || aiAlgo === 'abonly') && beta <= alpha) { prunedCount++; break; }
     }
     return best;
   } else {
     // !isMax = PIECE1's move
     let best = Infinity;
-    for (const [r,c] of empties) {
+    for (const [r,c] of useEmpties) {
       board[r][c] = PIECE1; merge(PIECE1, r, c);
       const val = minimax(depth-1, true, alpha, beta);
       board[r][c] = EMPTY; initUF();
       if (val < best) best = val;
       if (val < beta) beta = val;
-      if (beta <= alpha) { prunedCount++; break; }
+      if ((aiAlgo === 'alphabeta' || aiAlgo === 'abonly') && beta <= alpha) { prunedCount++; break; }
     }
     return best;
   }
@@ -208,6 +227,7 @@ function getBestMove() {
   const aiPiece = getAIPiece();
   // isMax = true when AI is PIECE2, false when AI is PIECE1
   const aiIsMax = aiPiece === PIECE2;
+  const startedTime = performance.now();
   let bestVal = aiIsMax ? -Infinity : Infinity;
   let bestMove = null;
 
@@ -223,16 +243,23 @@ function getBestMove() {
     (Math.abs(b[0]-cr)+Math.abs(b[1]-cm))
   );
 
-  if (diff === 'easy') {
+  if (diff === 'easy' && aiAlgo !== 'dijkstra') {
     const top = empties.slice(0, Math.min(6, empties.length));
     nodesCount = top.length;
+    lastAITime = performance.now() - startedTime;
     return top[Math.floor(Math.random()*top.length)];
   }
 
   for (const [r,c] of empties) {
     board[r][c] = aiPiece; merge(aiPiece, r, c);
     // After AI places, next turn is opponent → flip isMax
-    const val = minimax(depth-1, !aiIsMax, -Infinity, Infinity);
+    let val;
+    if (aiAlgo === 'dijkstra') {
+      val = evaluate();
+      nodesCount++;
+    } else {
+      val = minimax(depth-1, !aiIsMax, -Infinity, Infinity);
+    }
     board[r][c] = EMPTY; initUF();
 
     if (aiIsMax ? val > bestVal : val < bestVal) {
@@ -240,6 +267,7 @@ function getBestMove() {
       bestMove = [r,c];
     }
   }
+  lastAITime = performance.now() - startedTime;
   return bestMove;
 }
 
@@ -254,6 +282,8 @@ function newGame() {
   totalNodes  = 0;
   totalPruned = 0;
   lastAIMove  = null;
+  lastAITime  = 0;
+  hintHex     = null;
 
   initUF();
   renderBoard();
@@ -309,6 +339,7 @@ function playerMove(r, c) {
   if (gameMode === 'ai' && currentTurn !== getPlayerPiece()) return;
   if (board[r][c] !== EMPTY) return;
 
+  hintHex = null;
   const who = currentTurn;
   board[r][c] = who;
   merge(who, r, c);
@@ -316,6 +347,8 @@ function playerMove(r, c) {
 
   renderBoard();
   renderMoveHistory();
+  if (document.getElementById('review-body')?.classList.contains('open')) runReview();
+  checkCompStatus();
 
   if (checkWin(who)) { endGame(who); return; }
 
@@ -349,6 +382,8 @@ function doAIMove() {
 
   renderBoard();
   renderMoveHistory();
+  if (document.getElementById('review-body')?.classList.contains('open')) runReview();
+  checkCompStatus();
 
   if (checkWin(aiPiece)) { endGame(aiPiece); return; }
 
@@ -368,8 +403,11 @@ function undoMove() {
   currentTurn = PIECE1;
   gameOver    = false;
   lastAIMove  = null;
+  hintHex     = null;
   renderBoard();
   renderMoveHistory();
+  if (document.getElementById('review-body')?.classList.contains('open')) runReview();
+  checkCompStatus();
   updateTurnUI();
   setStatus('Move undone — your turn');
 }
@@ -464,6 +502,7 @@ function renderBoard(winPath = new Set()) {
       else if (board[r][c] === ap) cls += ' ai taken';
       if (lastAIMove && lastAIMove.r===r && lastAIMove.c===c) cls += ' last-move';
       if (winPath.has(`${r},${c}`)) cls += ' win-path';
+      if (hintHex && hintHex[0]===r && hintHex[1]===c) cls += ' hint-hex';
       g.setAttribute('class', cls);
 
       const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
@@ -471,6 +510,13 @@ function renderBoard(winPath = new Set()) {
       poly.setAttribute('points', hexPoints(hcx, hcy, R-1.5));
       poly.setAttribute('filter','url(#cs)');
       g.appendChild(poly);
+
+      const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x', hcx);
+      txt.setAttribute('y', hcy + 2);
+      txt.setAttribute('class', 'hex-coord');
+      txt.textContent = `${r},${c}`;
+      g.appendChild(txt);
 
       if (board[r][c]===EMPTY && !gameOver) {
         g.addEventListener('click',    () => playerMove(r, c));
@@ -498,10 +544,11 @@ function renderMoveHistory() {
   const is2P = gameMode === '2p';
   if (!moveHistory.length) { el.innerHTML='<div class="empty-msg">No moves yet.</div>'; return; }
   el.innerHTML = moveHistory.slice().reverse().map(m => {
+    const isTeal = m.who === PIECE1;
     const label = is2P
-      ? (m.who===PIECE1 ? 'P1' : 'P2')
-      : (m.who===pp ? 'You' : 'AI');
-    const color = m.who===PIECE1 ? 'var(--teal)' : 'var(--gold)';
+      ? (isTeal ? 'Player 1' : 'Player 2')
+      : (m.who === pp ? 'You' : 'AI');
+    const color = isTeal ? 'var(--teal)' : 'var(--gold)';
     return `<div class="move-entry">
       <span class="move-num">${m.move}</span>
       <span class="move-who" style="background:${color}"></span>
@@ -520,10 +567,12 @@ function updateTurnUI() {
 
   const banner = document.getElementById('turn-banner');
   const bannerT= document.getElementById('turn-banner-text');
+  const colorEmoji = isTeal ? '🟦' : '🟨';
+
   banner.className   = 'turn-banner ' + (isTeal ? 'teal-turn' : 'gold-turn');
   bannerT.textContent = is2P
-    ? (isTeal ? '🟦 Player 1 — Tap your hex' : '🟨 Player 2 — Tap your hex')
-    : (isMyTurn ? '🟦 Your Turn — Tap a hex'  : '🟨 AI is thinking…');
+    ? (isTeal ? `${colorEmoji} Player 1 — Tap your hex` : `${colorEmoji} Player 2 — Tap your hex`)
+    : (isMyTurn ? `${colorEmoji} Your Turn — Tap a hex`  : `${colorEmoji} AI is thinking…`);
 
   // Turn inside brain card (Fix #4)
   const dot  = document.getElementById('turn-inline-dot');
@@ -546,21 +595,43 @@ function updateTurnUI() {
 function updateEdgeLabels() {
   const pp   = getPlayerPiece();
   const is2P = gameMode === '2p';
-  const p1n  = pp===PIECE1 ? (is2P?'Player 1':'You') : (is2P?'Player 2':'AI');
-  const p2n  = pp===PIECE2 ? (is2P?'Player 1':'You') : (is2P?'Player 2':'AI');
-  document.getElementById('top-label').textContent    = `⬡ ${p2n} (Gold) — Top → Bottom`;
-  document.getElementById('bottom-label').textContent = `⬡ ${p2n} (Gold) — Top → Bottom`;
-  document.getElementById('left-label').textContent     = `⬡ ${p1n} (Teal) — Left → Right`;
-  document.getElementById('right-label').textContent    = `⬡ ${p1n} (Teal) — Left → Right`;
+  const tealName = is2P ? 'Player 1' : (pp===PIECE1 ? 'You' : 'AI');
+  const goldName = is2P ? 'Player 2' : (pp===PIECE2 ? 'You' : 'AI');
+
+  document.getElementById('top-label').textContent    = `⬡ ${goldName} (Gold) — Top → Bottom`;
+  document.getElementById('bottom-label').textContent = `⬡ ${goldName} (Gold) — Top → Bottom`;
+  document.getElementById('left-label').textContent   = `⬡ ${tealName} (Teal) — Left → Right`;
+  document.getElementById('right-label').textContent  = `⬡ ${tealName} (Teal) — Left → Right`;
 }
 
 function updateLegend() {
   const pp   = getPlayerPiece();
   const is2P = gameMode === '2p';
-  const p1l  = pp===PIECE1 ? (is2P?'Player 1':'You (Teal)') : (is2P?'Player 2':'AI (Teal)');
-  const p2l  = pp===PIECE2 ? (is2P?'Player 1':'You (Gold)') : (is2P?'Player 2':'AI (Gold)');
-  document.getElementById('leg-p1').textContent = `${p1l} — Left → Right`;
-  document.getElementById('leg-p2').textContent = `${p2l} — Top → Bottom`;
+  const tealL = is2P ? 'Player 1 (Teal)' : (pp===PIECE1 ? 'You (Teal)' : 'AI (Teal)');
+  const goldL = is2P ? 'Player 2 (Gold)' : (pp===PIECE2 ? 'You (Gold)' : 'AI (Gold)');
+  document.getElementById('leg-p1').textContent = `${tealL} — Left → Right`;
+  document.getElementById('leg-p2').textContent = `${goldL} — Top → Bottom`;
+}
+
+function checkCompStatus() {
+  const btn = document.getElementById('btn-run-comp');
+  const msg = document.getElementById('comp-status-msg');
+  if (!btn || !msg) return;
+  if (moveHistory.length > 0) {
+    btn.disabled = false; btn.style.opacity = '1';
+    msg.textContent = '(Comparing active board state)';
+  } else {
+    btn.disabled = true; btn.style.opacity = '0.6';
+    msg.textContent = '(Requires active board state to compare)';
+  }
+}
+
+let compDepth = 2;
+function setCompDepth(d) {
+  compDepth = d;
+  document.querySelectorAll('#comp-depth-group .size-btn').forEach(btn => 
+    btn.classList.toggle('active', parseInt(btn.dataset.cdepth) === d)
+  );
 }
 
 // ─── FIX #2: Unified collapsible toggle ─────────────────────────────
@@ -582,6 +653,9 @@ function updateBrainPanel() {
   document.getElementById('t-pruned').textContent = prunedCount.toLocaleString();
   document.getElementById('t-score').textContent  = stx;
   document.getElementById('t-best').textContent   = lastAIMove ? `Row ${lastAIMove.r}, Col ${lastAIMove.c}` : '—';
+  
+  const elTime = document.getElementById('t-time');
+  if (elTime) elTime.textContent = lastAITime.toFixed(1) + ' ms';
 
   const hm = document.getElementById('h-move');
   const hn = document.getElementById('h-nodes');
@@ -594,7 +668,7 @@ function updateBrainPanel() {
 }
 
 function resetBrainPanel() {
-  ['t-nodes','t-pruned','t-depth','t-score','t-best','h-move','h-nodes','h-depth']
+  ['t-nodes','t-pruned','t-depth','t-score','t-best','t-time','h-move','h-nodes','h-depth']
     .forEach(id => { const el=document.getElementById(id); if(el) el.textContent='—'; });
   document.getElementById('depth-fill').style.width = '0%';
   document.getElementById('think-badge').classList.remove('show');
@@ -602,6 +676,207 @@ function resetBrainPanel() {
   const text = document.getElementById('turn-inline-text');
   if (dot)  dot.className   = 'turn-inline-dot';
   if (text) text.textContent = '—';
+}
+
+// ─── AI HINT & REVIEW ───────────────────────────────────────────────
+function showHint() {
+  if (gameOver || gameMode !== 'ai') return;
+  
+  const oldSide = playerSide;
+  const wasPlayerTurn = currentTurn === getPlayerPiece();
+  // if it's the player's turn, temporarily switch context so AI finds move FOR player
+  if (wasPlayerTurn) playerSide = (oldSide === 'LR') ? 'TB' : 'LR';
+  
+  const move = getBestMove();
+  playerSide = oldSide; // restore
+  
+  if (move) {
+    hintHex = move;
+    renderBoard();
+  }
+}
+
+function runReview() {
+  const panel = document.getElementById('review-content');
+  if (!panel || gameOver) return;
+  
+  const score = evaluate();
+  const playerWinDist = dijkstraCost(getPlayerPiece());
+  const aiWinDist     = dijkstraCost(getAIPiece());
+
+  let evalStatus = '';
+  if (playerWinDist === 0) evalStatus = 'You have connected the edges!';
+  else if (aiWinDist === 0) evalStatus = 'Opponent has connected the edges!';
+  else if (playerWinDist === 1) evalStatus = '🔥 Threat: You are 1 step away from winning!';
+  else if (aiWinDist === 1) evalStatus = '⚠️ Critical Threat: Opponent is 1 step from winning!';
+  else if (score > 2) evalStatus = `Opponent is forming a strong path (Adv: +${score})`;
+  else if (score < -2) evalStatus = `You are forming a strong path (Adv: +${-score})`;
+  else evalStatus = 'Board paths are relatively balanced';
+
+  const oldSide = playerSide;
+  const wasPlayerTurn = currentTurn === getPlayerPiece();
+  if (wasPlayerTurn && gameMode === 'ai') playerSide = (oldSide === 'LR') ? 'TB' : 'LR';
+  
+  const aiPiece = getAIPiece();
+  const empties = [];
+  for (let r=0; r<N; r++) for (let c=0; c<N; c++) if (board[r][c] === EMPTY) empties.push([r,c]);
+
+  let moves = [];
+  for (const [r,c] of empties) {
+    board[r][c] = aiPiece; merge(aiPiece, r, c);
+    moves.push({r, c, val: evaluate()});
+    board[r][c] = EMPTY; initUF();
+  }
+  
+  playerSide = oldSide;
+  const aiIsMax = aiPiece === PIECE2;
+  moves.sort((a,b) => aiIsMax ? b.val - a.val : a.val - b.val);
+  const best = moves.slice(0, 3);
+  
+  // Highlight best move on standard board using hint class optionally
+  if (best.length && wasPlayerTurn) { hintHex = [best[0].r, best[0].c]; renderBoard(); }
+
+  let html = `<div class="review-row">
+    <div class="instr-card" style="\${(playerWinDist===1||aiWinDist===1) ? 'border-color:var(--red);background:rgba(232,64,64,0.04);' : ''}">
+      <div class="instr-icon">📈</div>
+      <div class="instr-heading">Live Assessment</div>
+      <div class="instr-text" style="color:var(--text);font-weight:600;">${evalStatus}</div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:6px;">Distance to Win: You (${playerWinDist}) vs Opponent (${aiWinDist})</div>
+    </div>`;
+    
+  if (best.length) {
+    const isDefense = aiWinDist === 1 && (score > 100 || score < -100);
+    const reason = isDefense ? 'Critical block needed immediately!' : (wasPlayerTurn ? 'Strengthens your connection.' : 'Reduces opponent path advantage.');
+    html += `
+      <div class="instr-card" style="border-color:var(--teal)">
+        <div class="instr-icon">💡</div>
+        <div class="instr-heading">Top Suggested Move</div>
+        <div class="instr-text">Row ${best[0].r}, Col ${best[0].c}</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">Reason: ${reason}</div>
+      </div>
+      <div class="instr-card">
+        <div class="instr-icon">🔄</div>
+        <div class="instr-heading">Alternative Moves</div>
+        <div class="instr-text" style="font-size:0.8rem">
+          ` + (best[1] ? `• Row ${best[1].r}, Col ${best[1].c} <span style="opacity:0.6">(eval: ${best[1].val})</span><br>` : '') + `
+          ` + (best[2] ? `• Row ${best[2].r}, Col ${best[2].c} <span style="opacity:0.6">(eval: ${best[2].val})</span>` : '') + `
+        </div>
+      </div>
+    `;
+  } else {
+    html += `<div class="instr-card"><div class="instr-text">No empty cells remaining.</div></div>`;
+  }
+  
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+function runCompHelper(algo, depth) {
+  let nc = 0, pc = 0;
+  const started = performance.now();
+  let bestVal = -Infinity; let bestMove = null;
+  const aiPiece = PIECE2; const isMax = true;
+  
+  const empties = [];
+  for (let r=0; r<N; r++) for(let c=0; c<N; c++) empties.push([r,c]);
+  
+  let useEmpties = empties;
+  if (algo !== 'abonly') {
+    const cr = Math.floor(N/2), cm = Math.floor(N/2);
+    useEmpties = [...empties].sort((a,b) => (Math.abs(a[0]-cr)+Math.abs(a[1]-cm)) - (Math.abs(b[0]-cr)+Math.abs(b[1]-cm)));
+  }
+  
+  function tempMinimax(d, mx, alpha, beta) {
+    nc++;
+    if (d === 0) return evaluate();
+    let val = mx ? -Infinity : Infinity;
+    for (const [r,c] of useEmpties) {
+      if (board[r][c] !== EMPTY) continue;
+      board[r][c] = mx ? PIECE2 : PIECE1; merge(board[r][c], r, c);
+      const v = tempMinimax(d-1, !mx, alpha, beta);
+      board[r][c] = EMPTY; initUF();
+      if (mx) {
+        if (v > val) val = v;
+        if (v > alpha) alpha = v;
+        if ((algo === 'alphabeta' || algo === 'abonly') && beta <= alpha) { pc++; break; }
+      } else {
+        if (v < val) val = v;
+        if (v < beta) beta = v;
+        if ((algo === 'alphabeta' || algo === 'abonly') && beta <= alpha) { pc++; break; }
+      }
+    }
+    return Math.abs(val)===Infinity ? evaluate() : val;
+  }
+  
+  for (const [r,c] of useEmpties) {
+      board[r][c] = aiPiece; merge(aiPiece, r, c);
+      let val;
+      if (algo === 'dijkstra') {
+         val = evaluate(); nc++;
+      } else {
+         val = tempMinimax(depth-1, false, -Infinity, Infinity);
+      }
+      board[r][c] = EMPTY; initUF();
+      if (val > bestVal) { bestVal = val; bestMove = [r,c]; }
+  }
+  return { nc, pc, time: performance.now() - started, bestVal, bestMove };
+}
+
+function runComparison() {
+  if (moveHistory.length === 0) return; // Prevent run on flat board if rules dictate
+  
+  const cDepth = compDepth;
+  
+  // Backup state
+  const oldBoard = board.map(row => [...row]);
+  
+  const res = {
+    mm: runCompHelper('minimax', cDepth),
+    ab: runCompHelper('abonly', cDepth),
+    mix: runCompHelper('alphabeta', cDepth),
+    dj: runCompHelper('dijkstra', cDepth)
+  };
+  
+  // Restore globals
+  board = oldBoard; initUF();
+  
+  const tbody = document.getElementById('comp-tbody');
+  
+  const tr = (label, km, k) => {
+    const vals = [res.mm[km], res.ab[km], res.mix[km], res.dj[km]];
+    // subtle highlight for best in row
+    const isMin = km === 'time' || km === 'nc';
+    const isMax = km === 'pc';
+    let bestIdx = -1;
+    if (isMin || isMax) {
+      let bVal = isMin ? Infinity : -1;
+      vals.forEach((v,i) => { if (isMin && v < bVal) { bVal = v; bestIdx = i; } else if (isMax && v > bVal) { bVal = v; bestIdx = i;} });
+    }
+    const fmt = v => typeof v === 'number' && km==='time' ? v.toFixed(1)+' ms' : (typeof v === 'number' && typeof v !== 'string' && km!=='bestVal' ? v.toLocaleString() : v);
+    return "<tr>" +
+      "<td>" + label + "</td>" +
+      "<td class='" + (bestIdx===0?"highlight col-mm":"") + " " + (km==="bestMove"||km==="bestVal"?"col-mm":"") + "'>" + fmt(vals[0]) + "</td>" +
+      "<td class='" + (bestIdx===1?"highlight col-ab":"") + " " + (km==="bestMove"||km==="bestVal"?"col-ab":"") + "'>" + fmt(vals[1]) + "</td>" +
+      "<td class='" + (bestIdx===2?"highlight col-mix":"") + " " + (km==="bestMove"||km==="bestVal"?"col-mix":"") + "'>" + fmt(vals[2]) + "</td>" +
+      "<td class='" + (bestIdx===3?"highlight col-dj":"") + " " + (km==="bestMove"||km==="bestVal"?"col-dj":"") + "'>" + fmt(vals[3]) + "</td>" +
+    "</tr>";
+  };
+  
+  res.mm.bm = res.mm.bestMove ? "(" + res.mm.bestMove[0] + "," + res.mm.bestMove[1] + ")" : "—";
+  res.ab.bm = res.ab.bestMove ? "(" + res.ab.bestMove[0] + "," + res.ab.bestMove[1] + ")" : "—";
+  res.mix.bm = res.mix.bestMove ? "(" + res.mix.bestMove[0] + "," + res.mix.bestMove[1] + ")" : "—";
+  res.dj.bm = res.dj.bestMove ? "(" + res.dj.bestMove[0] + "," + res.dj.bestMove[1] + ")" : "—";
+  
+  tbody.innerHTML = 
+    tr("Nodes Explored", "nc") +
+    tr("Execution Time", "time") +
+    "<tr><td>Depth Reached</td><td>" + cDepth + "</td><td>" + cDepth + "</td><td>" + cDepth + "</td><td>1 (Eval)</td></tr>" +
+    tr("Branches Pruned", "pc") +
+    tr("Board Score", "bestVal") +
+    tr("Best Move", "bm");
+    
+  const saved = res.mm.nc ? ((res.mm.nc - res.mix.nc) / res.mm.nc * 100).toFixed(1) : 0;
+  document.getElementById("comp-summary").innerHTML = "Minimax + α-β optimized <strong>" + saved + "%</strong> nodes explored compared to standard Minimax.";
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────

@@ -71,6 +71,51 @@
   </div>
 
   <!-- ══════════════════════════════════════
+       AI ALGORITHM SELECTION
+  ═══════════════════════════════════════ -->
+  <div class="side-selection" id="algo-selection">
+    <div class="side-sel-label" style="margin-bottom: 12px;">Select AI Algorithm</div>
+    <div class="algo-grid" style="padding: 0;">
+      <button class="algo-block algo-btn algo-btn-blue ai-minimax" id="algo-mm" onclick="setAlgorithm('minimax')">
+        <div class="algo-header" style="margin-bottom: 0;">
+          <div class="algo-icon">MM</div>
+          <div style="text-align: left;">
+            <div class="algo-name">Minimax</div>
+            <div class="algo-ref" style="color:var(--muted)">Standard AI Search</div>
+          </div>
+        </div>
+      </button>
+      <button class="algo-block algo-btn algo-btn-gold ai-ab" id="algo-ab-only" onclick="setAlgorithm('abonly')">
+        <div class="algo-header" style="margin-bottom: 0;">
+          <div class="algo-icon">α-β</div>
+          <div style="text-align: left;">
+            <div class="algo-name">Alpha-Beta</div>
+            <div class="algo-ref" style="color:var(--muted)">Classic Pruning</div>
+          </div>
+        </div>
+      </button>
+      <button class="algo-block algo-btn algo-btn-mix ai-mix active" id="algo-ab" onclick="setAlgorithm('alphabeta')">
+        <div class="algo-header" style="margin-bottom: 0;">
+          <div class="algo-icon">α-β</div>
+          <div style="text-align: left;">
+            <div class="algo-name">Minimax + α-β</div>
+            <div class="algo-ref" style="color:var(--muted)">Optimized (Default)</div>
+          </div>
+        </div>
+      </button>
+      <button class="algo-block algo-btn algo-btn-red ai-dijk" id="algo-dj" onclick="setAlgorithm('dijkstra')">
+        <div class="algo-header" style="margin-bottom: 0;">
+          <div class="algo-icon">DJ</div>
+          <div style="text-align: left;">
+            <div class="algo-name">Dijkstra</div>
+            <div class="algo-ref" style="color:var(--muted)">Heuristic Eval</div>
+          </div>
+        </div>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
        HOW TO PLAY — Fix #1: just "👉 How to Play"
   ═══════════════════════════════════════ -->
   <div class="collapsible-wrap">
@@ -174,6 +219,23 @@
   </div>
 
   <!-- ══════════════════════════════════════
+       GAME REVIEW / ANALYSIS
+  ═══════════════════════════════════════ -->
+  <div class="collapsible-wrap">
+    <button class="collapse-btn" onclick="toggleSection('review-body','rev-arrow'); if(document.getElementById('review-body').classList.contains('open')) runReview();">
+      <span>📊 Game Review &amp; Analysis</span>
+      <span class="collapse-arrow" id="rev-arrow">▼</span>
+    </button>
+    <div class="collapse-body" id="review-body">
+      <div id="review-content" class="review-content-wrap">
+         <div class="instr-text" style="padding:14px; color:var(--muted);">Click to analyze the current board state...</div>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ══════════════════════════════════════
        TOOLBAR
   ═══════════════════════════════════════ -->
   <div class="toolbar">
@@ -190,6 +252,7 @@
     </div>
     <div class="tb-sep"></div>
     <button class="tb-btn tb-primary"   onclick="newGame()">▶ New Game</button>
+    <button class="tb-btn tb-primary"   onclick="showHint()" style="background:var(--teal)">💡 Hint</button>
     <button class="tb-btn tb-secondary" onclick="undoMove()">↩ Undo</button>
   </div>
 
@@ -241,8 +304,9 @@
       <div class="card" id="ai-brain-card">
         <div class="card-title">AI Brain — Live</div>
         <div class="thinking-badge" id="think-badge"><span class="spin">⟳</span> Thinking…</div>
-        <div class="think-row"><span class="think-lbl">Algorithm</span><span class="think-val">Minimax + α-β</span></div>
+        <div class="think-row"><span class="think-lbl">Algorithm</span><span class="think-val" id="t-algo">Minimax + α-β</span></div>
         <div class="think-row"><span class="think-lbl">Search Depth</span><span class="think-val" id="t-depth">—</span></div>
+        <div class="think-row"><span class="think-lbl">Time Taken</span><span class="think-val" id="t-time">—</span></div>
         <div class="think-row"><span class="think-lbl">Nodes Evaluated</span><span class="think-val" id="t-nodes">—</span></div>
         <div class="think-row"><span class="think-lbl">Branches Pruned</span><span class="think-val" id="t-pruned">—</span></div>
         <div class="think-row"><span class="think-lbl">Board Score</span><span class="think-val" id="t-score">—</span></div>
@@ -280,6 +344,53 @@
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       ALGORITHM COMPARISON TOOL (moved below)
+  ═══════════════════════════════════════ -->
+  <div class="collapsible-wrap" style="margin-top: 20px;">
+    <button class="collapse-btn" onclick="toggleSection('comp-body','comp-arrow')">
+      <span>⚙️ Algorithm Comparison</span>
+      <span class="collapse-arrow" id="comp-arrow">▼</span>
+    </button>
+    <div class="collapse-body" id="comp-body">
+      <div class="comp-panel">
+        <div class="comp-settings" style="display:flex; align-items:center; gap: 16px;">
+          <span class="toolbar-label" style="font-size: 0.8rem">Search Depth:</span>
+          <div class="diff-group" id="comp-depth-group">
+            <button class="size-btn active" data-cdepth="2" onclick="setCompDepth(2)">2</button>
+            <button class="size-btn" data-cdepth="3" onclick="setCompDepth(3)">3</button>
+            <button class="size-btn" data-cdepth="4" onclick="setCompDepth(4)">4</button>
+            <button class="size-btn" data-cdepth="5" onclick="setCompDepth(5)">5</button>
+          </div>
+          <button class="tb-btn tb-primary" id="btn-run-comp" onclick="runComparison()" disabled style="opacity:0.6">▶ Run Comparison</button>
+          <span id="comp-status-msg" style="font-size: 0.8rem; color: var(--muted); font-weight: normal;">(Requires active board state to compare)</span>
+        </div>
+        <div class="comp-table-wrap">
+          <table class="comp-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th class="col-mm">Minimax</th>
+                <th class="col-ab">Alpha-Beta</th>
+                <th class="col-mix">Minimax + α-β</th>
+                <th class="col-dj">Dijkstra</th>
+              </tr>
+            </thead>
+            <tbody id="comp-tbody">
+              <tr><td>Nodes Explored</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td>Execution Time</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td>Depth Reached</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td>Branches Pruned</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td>Board Score</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+              <tr><td>Best Move</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+            </tbody>
+          </table>
+          <div class="comp-summary" id="comp-summary">Run comparison on the current board state to see relative algorithm performance.</div>
+        </div>
+      </div>
     </div>
   </div>
 
